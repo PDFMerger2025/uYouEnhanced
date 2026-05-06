@@ -55,21 +55,21 @@ jobs:
       - name: Clone Theos
         run: git clone --recursive --depth=1 https://github.com/theos/theos.git "$THEOS"
 
-      - name: Download requested SDK
+      - name: Download SDK repo zip
+        run: |
+          curl -fL https://github.com/theos/sdks/archive/refs/heads/master.zip -o sdks.zip
+          unzip -q sdks.zip
+          ls -la
+          find . -maxdepth 2 -type d | grep sdks | head -n 20
+
+      - name: Install requested SDK
         run: |
           mkdir -p "$THEOS/sdks"
-          SDK_FILE="iPhoneOS${{ inputs.sdk_version }}.sdk.tar.xz"
-          SDK_URL="https://github.com/theos/sdks/releases/download/master-1.0/${SDK_FILE}"
-
-          echo "Downloading ${SDK_URL}"
-          curl -fL "$SDK_URL" -o "$SDK_FILE"
-
-          file "$SDK_FILE"
-          tar -xJf "$SDK_FILE" -C "$THEOS/sdks"
+          SDK_SRC="$(find . -type d -name "iPhoneOS${{ inputs.sdk_version }}.sdk" | head -n 1)"
+          test -n "$SDK_SRC"
+          echo "Found SDK at: $SDK_SRC"
+          cp -R "$SDK_SRC" "$THEOS/sdks/"
           ls -la "$THEOS/sdks"
-
-      - name: Verify requested SDK exists
-        run: |
           test -d "$THEOS/sdks/iPhoneOS${{ inputs.sdk_version }}.sdk"
 
       - name: Update Makefile target
