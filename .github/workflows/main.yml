@@ -74,12 +74,31 @@ jobs:
         run: |
           cd "${{ github.workspace }}/main"
 
-          sed -i '' "1s#.*#export TARGET = iphone:clang:${{ inputs.sdk_version }}:14.0#g" Makefile
-          sed -i '' "2s#.*#export SDK_PATH = \$(THEOS)/sdks/iPhoneOS${{ inputs.sdk_version }}.sdk/#g" Makefile
-          sed -i '' "3s#.*#export SYSROOT = \$(SDK_PATH)#g" Makefile
+          perl -0pi -e 's|export TARGET = .*|export TARGET = iphone:clang:${{ inputs.sdk_version }}:14.0|g' Makefile
+          perl -0pi -e 's|export SDK_PATH = .*|export SDK_PATH = \$(THEOS)/sdks/iPhoneOS${{ inputs.sdk_version }}.sdk/|g' Makefile
+          perl -0pi -e 's|export SYSROOT = .*|export SYSROOT = \$(SDK_PATH)|g' Makefile
 
-          echo "Patched Makefile:"
-          head -n 10 Makefile
+          echo "Patched Makefile lines:"
+          grep -nE 'TARGET|SDK_PATH|SYSROOT' Makefile || true
+
+      - name: Ensure filter plist exists
+        run: |
+          cd "${{ github.workspace }}/main"
+
+          if [ -f "uYouEnhanced.plist" ]; then
+            echo "uYouEnhanced.plist already exists"
+          elif [ -f "Filter.plist" ]; then
+            echo "Filter.plist already exists"
+          elif [ -f "uYouPlus.plist" ]; then
+            cp "uYouPlus.plist" "uYouEnhanced.plist"
+            echo "Copied uYouPlus.plist -> uYouEnhanced.plist"
+          else
+            echo "No filter plist found"
+            find . -maxdepth 2 -name "*.plist"
+            exit 1
+          fi
+
+          ls -la *.plist || true
 
       - name: Build package
         id: build_package
