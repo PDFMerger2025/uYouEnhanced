@@ -36,34 +36,32 @@ jobs:
       contents: write
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      THEOS: ${{ github.workspace }}/theos
 
     steps:
-      - name: Checkout Main
+      - name: Checkout uYouEnhanced
         uses: actions/checkout@v5
         with:
           path: main
           ref: ${{ github.event.inputs.commit_id || github.ref }}
+          fetch-depth: 1
           submodules: recursive
 
       - name: Install Dependencies
         run: brew install ldid dpkg make gawk
 
-      - name: Set PATH environment variable
+      - name: Set GNU make PATH
         run: echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
 
-      - name: Setup Theos
-        uses: actions/checkout@v5
-        with:
-          repository: theos/theos
-          ref: master
-          path: theos
-          submodules: recursive
+      - name: Clone Theos
+        run: |
+          git clone --recursive --depth=1 https://github.com/theos/theos.git "$THEOS"
 
       - name: Cache iOS SDK
         id: sdk-cache
         uses: actions/cache@v4
         with:
-          path: theos/sdks/
+          path: ${{ env.THEOS }}/sdks/
           key: ios-sdk-${{ inputs.sdk_version }}
 
       - name: Download iOS SDK
@@ -75,14 +73,16 @@ jobs:
           git sparse-checkout set iPhoneOS${{ inputs.sdk_version }}.sdk
           git checkout
           mv iPhoneOS${{ inputs.sdk_version }}.sdk "$THEOS/sdks/"
-        env:
-          THEOS: ${{ github.workspace }}/theos
 
-      - name: Verify SDK
+      - name: Verify environment
         run: |
-          test -d "${{ github.workspace }}/theos/sdks/iPhoneOS${{ inputs.sdk_version }}.sdk"
-          echo "Using SDK:"
-          ls -1 "${{ github.workspace }}/theos/sdks" | grep "iPhoneOS"
+          echo "THEOS=$THEOS"
+          test -d "$THEOS"
+          test -d "$THEOS/sdks/iPhoneOS${{ inputs.sdk_version }}.sdk"
+          make --version
+          git --version
+          ls -la "$THEOS"
+          ls -la "$THEOS/sdks"
 
       - name: Build Package
         id: build_package
@@ -91,11 +91,8 @@ jobs:
 
           sed -i '' "1s#.*#export TARGET = iphone:clang:${{ inputs.sdk_version }}:14.0#g" Makefile
 
-          export THEOS="${{ github.workspace }}/theos"
-          export THEOS_PACKAGE_SCHEME=rootless
-
           make clean
-          make package FINALPACKAGE=1
+          make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1
 
           pkg="$(ls -t packages/*.deb | head -n1)"
           test -n "$pkg"
