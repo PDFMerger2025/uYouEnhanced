@@ -47,7 +47,7 @@ jobs:
           submodules: recursive
 
       - name: Install dependencies
-        run: brew install ldid dpkg make gawk
+        run: brew install ldid dpkg make gawk unzip
 
       - name: Set GNU make PATH
         run: echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
@@ -59,8 +59,6 @@ jobs:
         run: |
           curl -fL https://github.com/theos/sdks/archive/refs/heads/master.zip -o sdks.zip
           unzip -q sdks.zip
-          ls -la
-          find . -maxdepth 2 -type d | grep sdks | head -n 20
 
       - name: Install requested SDK
         run: |
@@ -69,14 +67,19 @@ jobs:
           test -n "$SDK_SRC"
           echo "Found SDK at: $SDK_SRC"
           cp -R "$SDK_SRC" "$THEOS/sdks/"
-          ls -la "$THEOS/sdks"
           test -d "$THEOS/sdks/iPhoneOS${{ inputs.sdk_version }}.sdk"
+          ls -la "$THEOS/sdks"
 
-      - name: Update Makefile target
+      - name: Patch Makefile SDK settings
         run: |
           cd "${{ github.workspace }}/main"
+
           sed -i '' "1s#.*#export TARGET = iphone:clang:${{ inputs.sdk_version }}:14.0#g" Makefile
-          head -n 5 Makefile
+          sed -i '' "2s#.*#export SDK_PATH = \$(THEOS)/sdks/iPhoneOS${{ inputs.sdk_version }}.sdk/#g" Makefile
+          sed -i '' "3s#.*#export SYSROOT = \$(SDK_PATH)#g" Makefile
+
+          echo "Patched Makefile:"
+          head -n 10 Makefile
 
       - name: Build package
         id: build_package
