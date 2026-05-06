@@ -5,7 +5,7 @@ on:
     inputs:
       sdk_version:
         description: "iOS SDK Version"
-        default: "17.5"
+        default: "16.5"
         required: true
         type: string
       commit_id:
@@ -34,6 +34,8 @@ jobs:
     runs-on: macos-14
     permissions:
       contents: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout Main
@@ -44,10 +46,10 @@ jobs:
           submodules: recursive
 
       - name: Install Dependencies
-        run: brew install ldid dpkg make
+        run: brew install ldid dpkg make gawk
 
       - name: Set PATH environment variable
-        run: echo "$(brew --prefix make)/libexec/gnubin" >> $GITHUB_PATH
+        run: echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
 
       - name: Setup Theos
         uses: actions/checkout@v5
@@ -57,53 +59,52 @@ jobs:
           path: theos
           submodules: recursive
 
-      - name: SDK Caching
-        id: SDK
-        uses: actions/cache@v4.3.0
-        env:
-          cache-name: iOS-${{ inputs.sdk_version }}-SDK
+      - name: Cache iOS SDK
+        id: sdk-cache
+        uses: actions/cache@v4
         with:
           path: theos/sdks/
-          key: ${{ env.cache-name }}
-          restore-keys: ${{ env.cache-name }}
+          key: ios-sdk-${{ inputs.sdk_version }}
 
       - name: Download iOS SDK
-        if: steps.SDK.outputs.cache-hit != 'true'
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/aricloverALT/sdks/
+          git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/aricloverALT/sdks.git sdks
           cd sdks
-          git sparse-checkout set --no-cone iPhoneOS${{ inputs.sdk_version }}.sdk
+          git sparse-checkout init --no-cone
+          git sparse-checkout set iPhoneOS${{ inputs.sdk_version }}.sdk
           git checkout
-          mv *.sdk $THEOS/sdks
+          mv iPhoneOS${{ inputs.sdk_version }}.sdk "$THEOS/sdks/"
         env:
           THEOS: ${{ github.workspace }}/theos
 
-      - name: Setup Theos Jailed
-        uses: actions/checkout@v5
-        with:
-          repository: qnblackcat/theos-jailed
-          ref: master
-          path: theos-jailed
-          submodules: recursive
-
-      - name: Install Theos Jailed
-        run: ./theos-jailed/install
-        env:
-          THEOS: ${{ github.workspace }}/theos
+      - name: Verify SDK
+        run: |
+          test -d "${{ github.workspace }}/theos/sdks/iPhoneOS${{ inputs.sdk_version }}.sdk"
+          echo "Using SDK:"
+          ls -1 "${{ github.workspace }}/theos/sdks" | grep "iPhoneOS"
 
       - name: Build Package
         id: build_package
         run: |
-          cd ${{ github.workspace }}/main
+          cd "${{ github.workspace }}/main"
+
           sed -i '' "1s#.*#export TARGET = iphone:clang:${{ inputs.sdk_version }}:14.0#g" Makefile
+
+          export THEOS="${{ github.workspace }}/theos"
+          export THEOS_PACKAGE_SCHEME=rootless
+
           make clean
-          make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1
-          pkg=$(ls -t packages/*.deb | head -n1)
-          echo "package=$(basename "$pkg")" >> $GITHUB_OUTPUT
-          echo -e "==> \\033[1mSHASUM256: $(shasum -a 256 "$pkg" | cut -d' ' -f1)\\033[0m"
-          echo -e "==> \\033[1mPackage: $(basename "$pkg")\\033[0m"
-        env:
-          THEOS: ${{ github.workspace }}/theos
+          make package FINALPACKAGE=1
+
+          pkg="$(ls -t packages/*.deb | head -n1)"
+          test -n "$pkg"
+
+          echo "package=$(basename "$pkg")" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(shasum -a 256 "$pkg" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+          echo "Built package: $(basename "$pkg")"
+          echo "SHA256: $(shasum -a 256 "$pkg" | awk '{print $1}')"
 
       - name: Upload Artifact
         if: ${{ inputs.upload_artifact }}
@@ -119,5 +120,5 @@ jobs:
         with:
           tag_name: deb-${{ github.run_number }}
           name: uYouEnhanced DEB ${{ github.run_number }}
-          files: ${{ github.workspace }}/main/packages/${{ steps.build_package.outputs.package }}
           draft: true
+          files: ${{ github.workspace }}/main/packages/${{ steps.build_package.outputs.package }}
