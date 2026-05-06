@@ -55,31 +55,27 @@ jobs:
       - name: Clone Theos
         run: git clone --recursive --depth=1 https://github.com/theos/theos.git "$THEOS"
 
-      - name: Download SDK repo
-        run: git clone --depth=1 https://github.com/arichornloverALT/sdks.git sdks
-
-      - name: Install requested SDK
+      - name: Download patched SDKs
         run: |
-          test -d "sdks/iPhoneOS${{ inputs.sdk_version }}.sdk"
           mkdir -p "$THEOS/sdks"
-          cp -R "sdks/iPhoneOS${{ inputs.sdk_version }}.sdk" "$THEOS/sdks/"
-          ls -la "$THEOS/sdks"
+          curl -L https://github.com/theos/sdks/releases/download/master-1.0/SDKs.tar.xz -o SDKs.tar.xz
+          tar -xJf SDKs.tar.xz -C "$THEOS/sdks"
 
-      - name: Verify build environment
+      - name: Verify requested SDK exists
         run: |
-          echo "THEOS=$THEOS"
-          test -d "$THEOS"
+          ls -1 "$THEOS/sdks"
           test -d "$THEOS/sdks/iPhoneOS${{ inputs.sdk_version }}.sdk"
-          make --version
-          git --version
+
+      - name: Update Makefile target
+        run: |
+          cd "${{ github.workspace }}/main"
+          sed -i '' "1s#.*#export TARGET = iphone:clang:${{ inputs.sdk_version }}:14.0#g" Makefile
+          head -n 5 Makefile
 
       - name: Build package
         id: build_package
         run: |
           cd "${{ github.workspace }}/main"
-
-          sed -i '' "1s#.*#export TARGET = iphone:clang:${{ inputs.sdk_version }}:14.0#g" Makefile
-
           export THEOS="$THEOS"
           make clean
           make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1
