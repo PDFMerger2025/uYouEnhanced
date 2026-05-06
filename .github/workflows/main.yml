@@ -35,7 +35,6 @@ jobs:
     permissions:
       contents: write
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       THEOS: ${{ github.workspace }}/theos
 
     steps:
@@ -47,50 +46,41 @@ jobs:
           fetch-depth: 1
           submodules: recursive
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: brew install ldid dpkg make gawk
 
       - name: Set GNU make PATH
         run: echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
 
       - name: Clone Theos
+        run: git clone --recursive --depth=1 https://github.com/theos/theos.git "$THEOS"
+
+      - name: Download SDK repo
+        run: git clone --depth=1 https://github.com/arichornloverALT/sdks.git sdks
+
+      - name: Install requested SDK
         run: |
-          git clone --recursive --depth=1 https://github.com/theos/theos.git "$THEOS"
+          test -d "sdks/iPhoneOS${{ inputs.sdk_version }}.sdk"
+          mkdir -p "$THEOS/sdks"
+          cp -R "sdks/iPhoneOS${{ inputs.sdk_version }}.sdk" "$THEOS/sdks/"
+          ls -la "$THEOS/sdks"
 
-      - name: Cache iOS SDK
-        id: sdk-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.THEOS }}/sdks/
-          key: ios-sdk-${{ inputs.sdk_version }}
-
-      - name: Download iOS SDK
-        if: steps.sdk-cache.outputs.cache-hit != 'true'
-        run: |
-          git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/aricloverALT/sdks.git sdks
-          cd sdks
-          git sparse-checkout init --no-cone
-          git sparse-checkout set iPhoneOS${{ inputs.sdk_version }}.sdk
-          git checkout
-          mv iPhoneOS${{ inputs.sdk_version }}.sdk "$THEOS/sdks/"
-
-      - name: Verify environment
+      - name: Verify build environment
         run: |
           echo "THEOS=$THEOS"
           test -d "$THEOS"
           test -d "$THEOS/sdks/iPhoneOS${{ inputs.sdk_version }}.sdk"
           make --version
           git --version
-          ls -la "$THEOS"
-          ls -la "$THEOS/sdks"
 
-      - name: Build Package
+      - name: Build package
         id: build_package
         run: |
           cd "${{ github.workspace }}/main"
 
           sed -i '' "1s#.*#export TARGET = iphone:clang:${{ inputs.sdk_version }}:14.0#g" Makefile
 
+          export THEOS="$THEOS"
           make clean
           make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1
 
@@ -103,7 +93,7 @@ jobs:
           echo "Built package: $(basename "$pkg")"
           echo "SHA256: $(shasum -a 256 "$pkg" | awk '{print $1}')"
 
-      - name: Upload Artifact
+      - name: Upload artifact
         if: ${{ inputs.upload_artifact }}
         uses: actions/upload-artifact@v4
         with:
@@ -111,7 +101,7 @@ jobs:
           path: ${{ github.workspace }}/main/packages/${{ steps.build_package.outputs.package }}
           if-no-files-found: error
 
-      - name: Create Release
+      - name: Create release
         if: ${{ inputs.create_release }}
         uses: softprops/action-gh-release@v2
         with:
